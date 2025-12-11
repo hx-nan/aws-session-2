@@ -5,4 +5,4 @@ Resources:
   MyBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: coderoad-demo-bucket-12345
+      BucketName: coderoad2-demo-bucket-12345
