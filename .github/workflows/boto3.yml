@@ -1,4 +1,4 @@
-name: BOto3 test
+name: Boto tests
 on:
   push:
     branches:
