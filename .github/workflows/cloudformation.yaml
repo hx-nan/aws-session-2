@@ -19,6 +19,6 @@ jobs:
       - name: Deploy CloudFormation stack
         run: |
           aws cloudformation deploy \
-            --template-file cloudformation.yaml \
+            --template-file s3.yaml \
             --stack-name coderoad-s3-stack \
             --no-fail-on-empty-changeset
