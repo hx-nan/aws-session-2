@@ -126,3 +126,60 @@ def test_target_group_has_healthy_targets(cfn, elbv2):
         if d.get("TargetHealth", {}).get("State") == "healthy"
     ]
     assert healthy, f"No healthy targets found. States: {[d.get('TargetHealth', {}) for d in descs]}"
+
+def test_instances_not_publicly_reachable_on_port_80(cfn, aws_region):
+    """
+    Security test: EC2 instances should NOT be directly reachable over HTTP from the internet.
+    We expect HTTP to be accessible only via the ALB, not via instance public IPs.
+    """
+
+    asg_client = boto3.client("autoscaling", region_name=aws_region)
+    ec2_client = boto3.client("ec2", region_name=aws_region)
+
+    # Discover the ASG physical name from CloudFormation resources
+    paginator = cfn.get_paginator("list_stack_resources")
+    asg_physical_name = None
+    for page in paginator.paginate(StackName=STACK_NAME):
+        for r in page.get("StackResourceSummaries", []):
+            if r.get("ResourceType") == "AWS::AutoScaling::AutoScalingGroup":
+                asg_physical_name = r.get("PhysicalResourceId")
+                break
+        if asg_physical_name:
+            break
+
+    assert asg_physical_name, "Could not find AutoScalingGroup resource in the stack."
+
+    # List instances in the ASG
+    resp = asg_client.describe_auto_scaling_groups(AutoScalingGroupNames=[asg_physical_name])
+    groups = resp.get("AutoScalingGroups", [])
+    assert groups, f"ASG '{asg_physical_name}' not found."
+
+    instance_ids = [i["InstanceId"] for i in groups[0].get("Instances", [])]
+    assert instance_ids, "ASG has no instances to validate."
+
+    # Describe instances and attempt direct HTTP access if they have public IPs
+    ec2_resp = ec2_client.describe_instances(InstanceIds=instance_ids)
+
+    public_ips = []
+    for reservation in ec2_resp.get("Reservations", []):
+        for inst in reservation.get("Instances", []):
+            ip = inst.get("PublicIpAddress")
+            if ip:
+                public_ips.append(ip)
+
+    # If instances do not have public IPs (common when using private subnets), this test is satisfied.
+    if not public_ips:
+        return
+
+    # Attempt to reach instances directly over HTTP; should NOT return 200 OK.
+    for ip in public_ips:
+        url = f"http://{ip}/"
+        try:
+            r = requests.get(url, timeout=3)
+            assert r.status_code != 200, (
+                f"Instance {ip} is publicly reachable on port 80 (HTTP 200). "
+                "Expected access only via ALB."
+            )
+        except requests.RequestException:
+            # Any connection failure/timeout is acceptable and indicates it is not publicly reachable.
+            pass
