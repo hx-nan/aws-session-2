@@ -8,7 +8,7 @@ import requests
 
 
 STACK_NAME = "my-ec2-stack"
-EXPECTED_TEXT = "Hello from in"
+EXPECTED_TEXT = "Hello from  in \n"
 
 
 def _get_stack_output(cfn_client, stack_name: str, key: str) -> str:
